@@ -4,6 +4,132 @@
     <title>Unifi Recovery Mode Web Server</title>
 </head>
 <body>
-    <a href="/fwupdate.bin">fwupdate.bin</a>
+    <h1>Select Product and Firmware Version</h1>
+    <label for="productSelect">Select Product:</label>
+    <select id="productSelect" onchange="loadFirmwareVersions()">
+        <option value="">Select a product</option>
+    </select>
+    <br><br>
+    <label for="firmwareSelect">Select Firmware Version:</label>
+    <select id="firmwareSelect" onchange="updateDownloadLink()">
+        <option value="">Select a firmware version</option>
+    </select>
+    <br><br>
+    <a id="downloadLink" href="#" style="display:none;" onclick="downloadFirmware(event)">Download fwupdate.bin</a>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            loadProducts();
+        });
+
+        async function loadProducts() {
+            try {
+                const response = await fetch('https://download.svc.ui.com/v1/downloads');
+                const data = await response.json();
+                console.log('Products data:', data); // Debugging line
+
+                const productsMap = new Map();
+                data.downloads.forEach(download => {
+                    if (download.category.slug === 'firmware') {
+                        download.products.forEach(product => {
+                            if (!productsMap.has(product.id)) {
+                                productsMap.set(product.id, {
+                                    name: product.name,
+                                    firmwares: []
+                                });
+                            }
+                            productsMap.get(product.id).firmwares.push({
+                                version: download.version,
+                                url: download.file_url
+                            });
+                        });
+                    }
+                });
+
+                // Convert the map to an array and sort it alphabetically by product name
+                const sortedProducts = Array.from(productsMap.entries()).sort((a, b) => {
+                    return a[1].name.localeCompare(b[1].name);
+                });
+
+                const productSelect = document.getElementById('productSelect');
+                sortedProducts.forEach(([key, value]) => {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = value.name;
+                    productSelect.appendChild(option);
+                });
+
+                // Store the productsMap for later use
+                window.productsMap = new Map(sortedProducts);
+            } catch (error) {
+                console.error('Error loading products:', error);
+            }
+        }
+
+        function loadFirmwareVersions() {
+            const productSelect = document.getElementById('productSelect');
+            const firmwareSelect = document.getElementById('firmwareSelect');
+            firmwareSelect.innerHTML = '<option value="">Select a firmware version</option>';
+
+            if (!productSelect.value) return;
+
+            const selectedProductId = parseInt(productSelect.value);
+            const firmwares = window.productsMap.get(selectedProductId).firmwares;
+
+            // Use a Map to store unique versions
+            const uniqueVersions = new Map();
+            firmwares.forEach(firmware => {
+                uniqueVersions.set(firmware.version, firmware.url);
+            });
+
+            // Convert the Map to an array and sort it in descending order
+            const sortedVersions = Array.from(uniqueVersions.entries()).sort((a, b) => {
+                return b[0].localeCompare(a[0], undefined, { numeric: true, sensitivity: 'base' });
+            });
+
+            // Populate the firmwareSelect dropdown with sorted versions
+            sortedVersions.forEach(([version, url]) => {
+                const option = document.createElement('option');
+                option.value = url;
+                option.textContent = version;
+                firmwareSelect.appendChild(option);
+            });
+        }
+
+        function updateDownloadLink() {
+            const firmwareSelect = document.getElementById('firmwareSelect');
+            const downloadLink = document.getElementById('downloadLink');
+
+            if (!firmwareSelect.value) {
+                downloadLink.style.display = 'none';
+                return;
+            }
+
+            downloadLink.href = firmwareSelect.value;
+            downloadLink.style.display = 'block';
+        }
+
+        async function downloadFirmware(event) {
+            event.preventDefault();
+            const firmwareSelect = document.getElementById('firmwareSelect');
+            if (!firmwareSelect.value) return;
+
+            const url = firmwareSelect.value;
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const a = document.createElement('a');
+                const objectURL = URL.createObjectURL(blob);
+                a.href = objectURL;
+                a.download = 'fwupdate.bin';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(objectURL);
+            } catch (error) {
+                console.error('Error downloading firmware:', error);
+            }
+        }
+    </script>
 </body>
 </html>
